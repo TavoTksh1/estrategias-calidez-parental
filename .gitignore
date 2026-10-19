@@ -2,3 +2,7 @@
 
 WhatsApp Video*.mp4
 
+*-debug.log
+.firebase/
+firebase-debug.log
+

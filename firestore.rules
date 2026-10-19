@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    // Administración: correo verificado y presente en esta lista (igual que ADMIN_EMAILS en js/firebase-config.js)
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['tavo.tkshi@gmail.com'];
+    }
+
+    function onlyKeys(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------- Videos ----------
+    match /videos/{vid} {
+      allow read: if true;
+      allow create: if isAdmin()
+        && request.resource.data.title is string && request.resource.data.title.size() > 0
+        && request.resource.data.url is string
+        && request.resource.data.views == 0
+        && request.resource.data.ratingSum == 0
+        && request.resource.data.ratingCount == 0
+        && request.resource.data.commentCount == 0;
+      allow delete: if isAdmin();
+      allow update: if isAdmin()
+        // contador de reproducciones: +1 (cualquier visitante)
+        || (onlyKeys(['views']) && request.resource.data.views == resource.data.views + 1)
+        // contador de comentarios: +1 (usuario registrado)
+        || (signedIn() && onlyKeys(['commentCount'])
+            && request.resource.data.commentCount == resource.data.commentCount + 1)
+        // promedio de calificaciones, coherente con la calificación guardada por este usuario
+        || (signedIn() && ratingUpdate(vid));
+
+      function ratingUpdate(vid) {
+        let rid = /databases/$(database)/documents/ratings/$(vid + '_' + request.auth.uid);
+        let before = resource.data;
+        let after = request.resource.data;
+        return onlyKeys(['ratingSum', 'ratingCount'])
+          && existsAfter(rid)
+          && (exists(rid)
+              ? (after.ratingCount == before.ratingCount
+                 && after.ratingSum == before.ratingSum - get(rid).data.score + getAfter(rid).data.score)
+              : (after.ratingCount == before.ratingCount + 1
+                 && after.ratingSum == before.ratingSum + getAfter(rid).data.score));
+      }
+    }
+
+    // ---------- Calificaciones: una por usuario y video (id = videoId_uid) ----------
+    match /ratings/{rid} {
+      allow read: if true;
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['vid', 'uid', 'score'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.vid is string
+        && rid == request.resource.data.vid + '_' + request.auth.uid
+        && request.resource.data.score is int
+        && request.resource.data.score >= 1 && request.resource.data.score <= 5;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Comentarios ----------
+    match /comments/{cid} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['vid', 'uid', 'name', 'text', 'parent', 'hidden', 'likes', 'date'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.name == request.auth.token.name
+        && request.resource.data.vid is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 600
+        && request.resource.data.hidden == false
+        && request.resource.data.likes == []
+        && request.resource.data.date == request.time;
+      allow update: if isAdmin()
+        || (signedIn() && onlyKeys(['likes'])
+            && request.resource.data.likes.hasOnly(resource.data.likes.concat([request.auth.uid]))
+            && resource.data.likes.hasOnly(request.resource.data.likes.concat([request.auth.uid])));
+      allow delete: if isAdmin();
+    }
+  }
+}
