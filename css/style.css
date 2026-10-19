@@ -90,3 +90,5 @@ th{color:var(--roble)}
 .or{display:flex;align-items:center;gap:.8rem;color:var(--muted);font-size:.85rem}
 .or::before,.or::after{content:'';flex:1;border-top:1px solid var(--line)}
 input:disabled{background:#eef0e4;cursor:not-allowed}
+.check{display:flex;align-items:center;gap:.6rem;font-size:.92rem;color:var(--roble)}
+.check input{width:auto}

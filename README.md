@@ -6,4 +6,7 @@ Plataforma de videos con calificaciones (1-5 estrellas) y comentarios. Sitio est
 - Acceso de demostración (administración): `admin@calidezparental.com` / `admin123`. Publica videos y modera comentarios.
 - Paleta institucional: Roble `#404827`, Acacia `#81bb26`, Eucalipto `#008776`, Naranja `#f08013`, Amarillo `#f2a900`.
 - Logo: guardar como `img/logo-unbosque.svg`.
-- Los datos se guardan en `localStorage` del navegador (demo sin backend). Ver `Requerimientos y Plan de Acción - Foro de Videos.md`.
+- Publicación para toda la comunidad: en el panel de administración se conecta un token de GitHub (fine-grained, solo este repositorio, permiso Contents lectura/escritura). Los videos se suben a `videos/` y se registran en `videos.json` (máx. 95 MB por archivo).
+- Sin token, los videos quedan solo en el navegador de quien los sube.
+- Comentarios, votos y usuarios se guardan en `localStorage` del navegador (demo sin backend). Ver `Requerimientos y Plan de Acción - Foro de Videos.md`.
+
