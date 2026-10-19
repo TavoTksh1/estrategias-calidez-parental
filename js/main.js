@@ -3,7 +3,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  updateProfile, sendEmailVerification, sendPasswordResetEmail, connectAuthEmulator,
+  updateProfile, sendEmailVerification, sendPasswordResetEmail, signInAnonymously, connectAuthEmulator,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
   getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, query, where,
@@ -32,7 +32,7 @@ const errMsg = e => ({
   'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres', 'auth/invalid-credential': 'Correo o contraseña incorrectos',
   'auth/user-not-found': 'Correo o contraseña incorrectos', 'auth/wrong-password': 'Correo o contraseña incorrectos',
   'auth/too-many-requests': 'Demasiados intentos, espera unos minutos', 'auth/network-request-failed': 'Sin conexión con el servidor',
-  'permission-denied': 'No tienes permiso para hacer esto', 'unavailable': 'Sin conexión con el servidor',
+  'auth/operation-not-allowed': 'El acceso anónimo no está habilitado', 'permission-denied': 'No tienes permiso para hacer esto', 'unavailable': 'Sin conexión con el servidor',
 }[e.code?.replace('firestore/', '')] || 'Ocurrió un error, intenta de nuevo');
 
 /* ---------- enlaces de video ---------- */
@@ -66,9 +66,10 @@ const clearSubs = () => { unsubs.forEach(u => u()); unsubs = []; };
 
 /* ---------- navegación ---------- */
 function renderNav() {
-  $('#nav').innerHTML = user
+  const named = user && !user.isAnonymous;
+  $('#nav').innerHTML = named
     ? `${isAdmin() ? '<a class="btn sm" href="#/admin">Panel de administración</a>' : ''}<span class="muted">${esc((user.displayName || user.email).split(' ')[0])}</span><button class="btn sm" id="out">Salir</button>`
-    : '<a class="btn sm" href="#/login">Iniciar sesión</a><a class="btn sm primary" href="#/register">Registrarse</a>';
+    : '<a class="btn sm" href="#/login">Acceso administración</a>';
   $('#out')?.addEventListener('click', async () => { await signOut(auth); location.hash = '#/'; toast('Sesión cerrada'); });
 }
 const verifyBanner = () => adminEmail() && !user.emailVerified
@@ -121,7 +122,7 @@ function watch(id) {
     $('#rating').innerHTML = `<h2>Calificación</h2><div class="rate"><span class="avg">${a ? a.toFixed(1) : '–'}</span><div><div class="stars">${starsStr(a)}</div><small class="muted">${v.ratingCount} voto${v.ratingCount === 1 ? '' : 's'}</small></div></div>
       <hr style="border:0;border-top:1px solid var(--line);margin:1rem 0">
       ${user ? `<p class="muted" style="font-size:.85rem">${my ? 'Tu voto (puedes cambiarlo):' : 'Tu calificación:'}</p><div>${[1, 2, 3, 4, 5].map(n => `<button class="star-btn ${my >= n ? 'on' : ''}" data-s="${n}" aria-label="${n} estrellas">★</button>`).join('')}</div>`
-        : '<p class="muted" style="font-size:.9rem"><a href="#/login" style="color:var(--p)">Inicia sesión</a> para calificar.</p>'}`;
+        : '<p class="muted" style="font-size:.9rem">No se pudo conectar. Recarga la página para calificar.</p>'}`;
     document.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => rate(+b.dataset.s)));
   };
   const rate = async score => {
@@ -153,7 +154,7 @@ function watch(id) {
       || '<p class="muted">Aún no hay comentarios. Comparte tu reflexión.</p>';
     const byId = i => comments.find(c => c.id === i);
     document.querySelectorAll('[data-like]').forEach(b => b.addEventListener('click', async () => {
-      if (!user) return toast('Inicia sesión para dar Me gusta');
+      if (!user) return toast('No se pudo conectar. Recarga la página');
       const c = byId(b.dataset.like);
       try { await updateDoc(doc(db, 'comments', c.id), { likes: (c.likes || []).includes(user.uid) ? arrayRemove(user.uid) : arrayUnion(user.uid) }); } catch (e) { toast(errMsg(e)); }
     }));
@@ -171,15 +172,21 @@ function watch(id) {
       try { await Promise.all(gone.map(c => deleteDoc(doc(db, 'comments', c.id)))); await updateDoc(vref, { commentCount: increment(-gone.length) }); toast('Comentario eliminado'); } catch (e) { toast(errMsg(e)); }
     }));
   };
+  const getName = () => {
+    const n = (($('#cname')?.value ?? '') || localStorage.getItem('calidez.name') || '').trim().slice(0, 40) || 'Anónimo';
+    try { n === 'Anónimo' ? localStorage.removeItem('calidez.name') : localStorage.setItem('calidez.name', n); } catch {}
+    return n;
+  };
   const postComment = async (text, parent = null) => {
+    if (!user) return toast('No se pudo conectar. Recarga la página');
     try {
-      await addDoc(collection(db, 'comments'), { vid: id, uid: user.uid, name: user.displayName, text, parent, hidden: false, likes: [], date: serverTimestamp() });
+      await addDoc(collection(db, 'comments'), { vid: id, uid: user.uid, name: getName(), text, parent, hidden: false, likes: [], date: serverTimestamp() });
       await updateDoc(vref, { commentCount: increment(1) });
     } catch (e) { toast(errMsg(e)); }
   };
-  $('#cform').innerHTML = user
-    ? `<textarea id="ct" rows="3" maxlength="600" placeholder="Escribe un comentario…" aria-label="Comentario"></textarea><div style="margin:.7rem 0 1rem" class="row"><button class="btn primary" id="cs" style="flex:none">Publicar</button><select id="cso" style="flex:none;width:auto" aria-label="Ordenar comentarios"><option value="recent">Más recientes</option><option value="pop">Más populares</option></select></div>`
-    : '<p class="muted"><a href="#/login" style="color:var(--p)">Inicia sesión</a> o <a href="#/register" style="color:var(--p)">regístrate</a> para comentar.</p>';
+  let saved = ''; try { saved = localStorage.getItem('calidez.name') || ''; } catch {}
+  $('#cform').innerHTML = `<input id="cname" maxlength="40" placeholder="Tu nombre (opcional, por defecto: Anónimo)" value="${esc(saved)}" aria-label="Tu nombre" style="margin-bottom:.6rem">
+    <textarea id="ct" rows="3" maxlength="600" placeholder="Escribe un comentario…" aria-label="Comentario"></textarea><div style="margin:.7rem 0 1rem" class="row"><button class="btn primary" id="cs" style="flex:none">Publicar</button><select id="cso" style="flex:none;width:auto" aria-label="Ordenar comentarios"><option value="recent">Más recientes</option><option value="pop">Más populares</option></select></div>`;
   $('#cs')?.addEventListener('click', async () => { const t = $('#ct').value.trim(); if (!t) return toast('Escribe algo primero'); $('#ct').value = ''; await postComment(t); });
   if ($('#cso')) { $('#cso').value = sortC; $('#cso').addEventListener('change', e => { sortC = e.target.value; renderComments(); }); }
 
@@ -203,7 +210,7 @@ function authForm(register) {
     <label>Correo<input name="email" type="email" required autocomplete="email"></label>
     <label>Contraseña<input name="pass" type="password" required minlength="6" autocomplete="${register ? 'new-password' : 'current-password'}"></label>
     <button class="btn primary">${register ? 'Registrarme' : 'Entrar'}</button>
-    <p class="center muted" style="font-size:.85rem">${register ? '¿Ya tienes cuenta? <a href="#/login" style="color:var(--p)">Entra</a>' : '¿Nuevo? <a href="#/register" style="color:var(--p)">Regístrate</a> · <a href="#" id="forgot" style="color:var(--p)">Olvidé mi contraseña</a>'}</p></form>`;
+    <p class="center muted" style="font-size:.85rem">${register ? '¿Ya tienes cuenta? <a href="#/login" style="color:var(--p)">Entra</a>' : 'Acceso exclusivo para administración. Para comentar y calificar no necesitas cuenta. · <a href="#" id="forgot" style="color:var(--p)">Olvidé mi contraseña</a>'}</p></form>`;
   $('#forgot')?.addEventListener('click', async e => {
     e.preventDefault(); const email = $('#f [name=email]').value.trim();
     if (!email) return toast('Escribe tu correo arriba y vuelve a pulsar');
@@ -283,7 +290,10 @@ function route() {
   if (p === 'video' && id) watch(id); else if (p === 'login') authForm(false); else if (p === 'register') authForm(true); else if (p === 'admin') admin(); else home();
 }
 window.addEventListener('hashchange', route);
-onAuthStateChanged(auth, u => { user = u; authReady = true; route(); });
+onAuthStateChanged(auth, u => {
+  if (!u) { signInAnonymously(auth).catch(e => { user = null; authReady = true; route(); toast(errMsg(e)); }); return; }
+  user = u; authReady = true; route();
+});
 onSnapshot(collection(db, 'videos'), s => {
   videos = s.docs.map(d => ({ id: d.id, views: 0, ratingSum: 0, ratingCount: 0, commentCount: 0, ...d.data() }));
   const first = !videosReady; videosReady = true;

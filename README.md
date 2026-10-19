@@ -1,12 +1,12 @@
-﻿# Estrategias de calidez parental
+# Estrategias de calidez parental
 
 Plataforma de videos con calificaciones (1-5 estrellas) y comentarios, de la Universidad El Bosque.
 
 **Tecnología:** HTML, CSS y JavaScript sin paso de compilación, con Firebase (Authentication, Firestore y Hosting) en el plan gratuito.
 
 - **Videos por enlace:** YouTube (público o "no listado"), Vimeo o un `.mp4` con https. No se suben archivos porque Cloud Storage requiere el plan de pago.
-- **Registro obligatorio** para comentar y calificar. Una calificación por usuario y video.
-- **Administración:** los correos listados en `js/firebase-config.js` y `firestore.rules` (con el correo verificado) pueden publicar videos y moderar comentarios.
+- **Sin cuenta:** cualquiera puede calificar y comentar. Cada navegador recibe una identidad anónima de Firebase (Authentication anónimo), de modo que hay una calificación por navegador y video. El nombre al comentar es opcional y por defecto es "Anónimo".
+- **Administración (con cuenta):** los correos listados en `js/firebase-config.js` y `firestore.rules` (con el correo verificado) pueden publicar videos y moderar comentarios.
 - **Seguridad:** toda la lógica de permisos está en `firestore.rules`.
 
 ## Desarrollo local
