@@ -1,25 +1,17 @@
 ﻿'use strict';
-/* SofiTV – foro de videos. Sitio estático: los datos viven en localStorage (demo).
+/* Estrategias de calidez parental – foro de videos. Sitio estático: los datos viven en localStorage (demo).
    Decisiones: videos por enlace (YouTube/Vimeo/MP4); comentar y calificar requiere registro. */
 
-const KEY = 'sofitv.db.v1';
+const KEY = 'calidez.db.v1';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const hash = s => { let h = 5381; for (const c of s + 'sofitv-salt') h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h.toString(36); };
+const hash = s => { let h = 5381; for (const c of s + 'calidez-salt') h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h.toString(36); };
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 function seed() {
-  const now = Date.now(), d = n => now - n * 864e5;
-  const v = (id, title, desc, cat, yt, days, views) => ({ id, title, desc, cat, url: 'https://www.youtube.com/watch?v=' + yt, thumb: `https://img.youtube.com/vi/${yt}/hqdefault.jpg`, date: d(days), views });
   return {
-    users: [{ id: 'u-admin', name: 'Sofi (Admin)', email: 'admin@sofitv.com', pass: hash('admin123'), role: 'admin' }],
-    videos: [
-      v('v1', 'Big Buck Bunny – Cortometraje', 'Un conejo gigante y tres roedores traviesos. Animación libre de Blender.', 'Animación', 'aqz-KE-bpKQ', 2, 120),
-      v('v2', 'Me at the zoo', 'El primer video de la historia de YouTube. ¡Un clásico!', 'Clásicos', 'jNQXAC9IVRw', 5, 86),
-      v('v3', 'Never Gonna Give You Up', 'El himno de internet que todos conocen.', 'Música', 'dQw4w9WgXcQ', 8, 301),
-      v('v4', 'Tutorial: HTML y CSS desde cero', 'Introducción a la maquetación web moderna.', 'Tutoriales', 'qz0aGYrrlhU', 11, 64),
-    ],
-    ratings: [], comments: [], session: null,
+    users: [{ id: 'u-admin', name: 'Administración', email: 'admin@calidezparental.com', pass: hash('admin123'), role: 'admin' }],
+    videos: [], ratings: [], comments: [], session: null,
   };
 }
 let db;
@@ -48,7 +40,7 @@ const ytThumb = url => { const m = url.match(/(?:youtu\.be\/|v=|embed\/|shorts\/
 function renderNav() {
   const u = me();
   $('#nav').innerHTML = u
-    ? `${isAdmin() ? '<a class="btn sm" href="#/admin">⚙ Panel</a>' : ''}<span class="muted">Hola, ${esc(u.name.split(' ')[0])}</span><button class="btn sm" id="out">Salir</button>`
+    ? `${isAdmin() ? '<a class="btn sm" href="#/admin">Panel de administración</a>' : ''}<span class="muted">${esc(u.name.split(' ')[0])}</span><button class="btn sm" id="out">Salir</button>`
     : '<a class="btn sm" href="#/login">Iniciar sesión</a><a class="btn sm primary" href="#/register">Registrarse</a>';
   $('#out')?.addEventListener('click', () => { db.session = null; save(); location.hash = '#/'; route(); toast('Sesión cerrada'); });
 }
@@ -61,11 +53,11 @@ function home() {
   const key = { recent: v => -v.date, views: v => -v.views, rated: v => -rate(v.id).avg }[filter.sort];
   list.sort((a, b) => key(a) - key(b));
   $('#app').innerHTML = `
-    <section class="hero"><h1>Mira, califica y <span>comenta</span> videos</h1><p>La comunidad de SofiTV: reproduce, deja tus estrellas y conversa en los comentarios.</p></section>
-    <div class="toolbar"><input id="q" placeholder="🔍 Buscar videos…" value="${esc(filter.q)}">
+    <section class="hero"><div class="eyebrow">Recursos audiovisuales</div><h1>Estrategias de calidez parental</h1><p>Videos educativos para comprender y fortalecer el vínculo afectivo entre cuidadores e hijos. Revisa el material, valóralo y comparte tus reflexiones con la comunidad.</p></section>
+    <div class="toolbar"><input id="q" placeholder="Buscar videos…" value="${esc(filter.q)}">
       <select id="sort"><option value="recent">Más recientes</option><option value="views">Más vistos</option><option value="rated">Mejor calificados</option></select></div>
     <div class="chips">${cats.map(c => `<span class="chip ${c === filter.cat ? 'on' : ''}" data-c="${esc(c)}">${esc(c)}</span>`).join('')}</div>
-    <div class="grid">${list.map(card).join('') || '<p class="muted">No hay videos que coincidan.</p>'}</div>`;
+    ${list.length ? `<div class="grid">${list.map(card).join('')}</div>` : `<div class="empty">${db.videos.length ? 'No hay videos que coincidan con la búsqueda.' : 'Aún no hay videos publicados. El administrador puede agregarlos desde el panel.'}</div>`}`;
   $('#sort').value = filter.sort;
   $('#q').addEventListener('input', e => { filter.q = e.target.value; const p = e.target.selectionStart; home(); const q = $('#q'); q.focus(); q.setSelectionRange(p, p); });
   $('#sort').addEventListener('change', e => { filter.sort = e.target.value; home(); });
@@ -74,7 +66,7 @@ function home() {
 function card(v) {
   const r = rate(v.id);
   return `<a class="card" href="#/video/${v.id}"><div class="thumb"><img loading="lazy" src="${esc(v.thumb)}" alt="${esc(v.title)}" onerror="this.style.display='none'"><span class="tag">${esc(v.cat)}</span><span class="play">▶</span></div>
-    <div class="info"><h3>${esc(v.title)}</h3><div class="meta"><span class="stars">${starsStr(r.avg)}</span><span>${r.avg ? r.avg.toFixed(1) : 'Sin votos'}</span><span>👁 ${v.views}</span><span>💬 ${ncom(v.id)}</span></div></div></a>`;
+    <div class="info"><h3>${esc(v.title)}</h3><div class="meta"><span class="stars">${starsStr(r.avg)}</span><span>${r.avg ? r.avg.toFixed(1) : 'Sin votos'}</span><span>${v.views} reprod.</span><span>${ncom(v.id)} comentarios</span></div></div></a>`;
 }
 
 let sortC = 'recent';
@@ -89,9 +81,9 @@ function watch(id, count = true) {
   const cm = (c, reply) => {
     const au = db.users.find(x => x.id === c.uid);
     return `<div class="${reply ? 'reply ' : ''}comment"><div class="avatar">${esc((au?.name || '?')[0].toUpperCase())}</div><div class="body">
-      <div><span class="who">${esc(au?.name || 'Anónimo')}${au?.role === 'admin' ? ' 👑' : ''}</span><span class="when">${ago(c.date)}</span></div>
+      <div><span class="who">${esc(au?.name || 'Anónimo')}${au?.role === 'admin' ? ' · Administración' : ''}</span><span class="when">${ago(c.date)}</span></div>
       <p class="${c.hidden ? 'hidden-c' : ''}">${c.hidden ? '[Comentario oculto por moderación] ' : ''}${esc(c.text)}</p>
-      <div class="actions"><button class="btn sm" data-like="${c.id}">👍 ${likes(c)}</button>
+      <div class="actions"><button class="btn sm" data-like="${c.id}">Me gusta · ${likes(c)}</button>
       ${!reply && u ? `<button class="btn sm" data-reply="${c.id}">Responder</button>` : ''}
       ${isAdmin() ? `<button class="btn sm" data-hide="${c.id}">${c.hidden ? 'Mostrar' : 'Ocultar'}</button><button class="btn sm danger" data-del="${c.id}">Eliminar</button>` : ''}</div>
       <div id="rf-${c.id}"></div></div></div>
@@ -101,17 +93,17 @@ function watch(id, count = true) {
   <div class="watch"><div>
     <div class="player">${embed(v.url) || '<p class="center muted" style="padding:3rem">No se pudo cargar el video.</p>'}</div>
     <h1 class="title">${esc(v.title)}</h1>
-    <div class="meta"><span class="tag" style="position:static">${esc(v.cat)}</span><span>👁 ${v.views} reproducciones</span><span>📅 ${new Date(v.date).toLocaleDateString('es')}</span></div>
+    <div class="meta"><span class="tag" style="position:static">${esc(v.cat)}</span><span>${v.views} reproducciones</span><span>Publicado el ${new Date(v.date).toLocaleDateString('es')}</span></div>
     <div class="panel" style="margin-top:1rem"><p>${esc(v.desc)}</p></div></div>
-  <div class="side"><div class="panel" style="margin-bottom:1.2rem"><h2>⭐ Calificación</h2>
+  <div class="side"><div class="panel" style="margin-bottom:1.2rem"><h2>Calificación</h2>
     <div class="rate"><span class="avg">${r.avg ? r.avg.toFixed(1) : '–'}</span><div><div class="stars">${starsStr(r.avg)}</div><small class="muted">${r.n} voto${r.n === 1 ? '' : 's'}</small></div></div>
     <hr style="border:0;border-top:1px solid var(--line);margin:1rem 0">
     ${u ? `<p class="muted" style="font-size:.85rem">${mine ? 'Tu voto (puedes cambiarlo):' : 'Tu calificación:'}</p><div>${[1, 2, 3, 4, 5].map(n => `<button class="star-btn ${mine && mine.score >= n ? 'on' : ''}" data-s="${n}">★</button>`).join('')}</div>`
       : '<p class="muted" style="font-size:.9rem"><a href="#/login" style="color:var(--p)">Inicia sesión</a> para calificar.</p>'}</div></div></div>
-  <div class="panel" style="margin-top:1.5rem"><h2>💬 ${ncom(id)} comentarios</h2>
+  <div class="panel" style="margin-top:1.5rem"><h2>Comentarios (${ncom(id)})</h2>
     ${u ? `<textarea id="ct" rows="3" maxlength="600" placeholder="Escribe un comentario…"></textarea><div style="margin:.7rem 0 1rem" class="row"><button class="btn primary" id="cs" style="flex:none">Publicar</button><select id="cso" style="flex:none;width:auto"><option value="recent">Más recientes</option><option value="pop">Más populares</option></select></div>`
       : '<p class="muted"><a href="#/login" style="color:var(--p)">Inicia sesión</a> o <a href="#/register" style="color:var(--p)">regístrate</a> para comentar.</p>'}
-    ${top.map(c => cm(c)).join('') || '<p class="muted">Sé el primero en comentar.</p>'}</div>`;
+    ${top.map(c => cm(c)).join('') || '<p class="muted">Aún no hay comentarios. Comparte tu reflexión.</p>'}</div>`;
   const re = () => watch(id, false);
   document.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => {
     const s = +b.dataset.s; if (mine) mine.score = s; else db.ratings.push({ vid: id, uid: u.id, score: s });
@@ -139,7 +131,7 @@ function authForm(register) {
     <label>Correo<input name="email" type="email" required></label>
     <label>Contraseña<input name="pass" type="password" required minlength="6"></label>
     <button class="btn primary">${register ? 'Registrarme' : 'Entrar'}</button>
-    <p class="center muted" style="font-size:.85rem">${register ? '¿Ya tienes cuenta? <a href="#/login" style="color:var(--p)">Entra</a>' : '¿Nuevo? <a href="#/register" style="color:var(--p)">Regístrate</a><br>Demo admin: admin@sofitv.com / admin123'}</p></form>`;
+    <p class="center muted" style="font-size:.85rem">${register ? '¿Ya tienes cuenta? <a href="#/login" style="color:var(--p)">Entra</a>' : '¿Nuevo? <a href="#/register" style="color:var(--p)">Regístrate</a><br>Acceso de demostración (administración): admin@calidezparental.com / admin123'}</p></form>`;
   $('#f').addEventListener('submit', e => {
     e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const email = f.email.trim().toLowerCase();
     if (register) {
@@ -155,15 +147,15 @@ function authForm(register) {
 function admin() {
   if (!isAdmin()) { location.hash = '#/login'; return; }
   const tv = db.videos.reduce((a, v) => a + v.views, 0);
-  $('#app').innerHTML = `<h1 class="title">⚙ Panel de administración</h1>
+  $('#app').innerHTML = `<h1 class="title">Panel de administración</h1>
   <div class="stats"><div class="stat"><b>${db.videos.length}</b>Videos</div><div class="stat"><b>${tv}</b>Reproducciones</div><div class="stat"><b>${db.comments.length}</b>Comentarios</div><div class="stat"><b>${db.users.length}</b>Usuarios</div></div>
-  <form class="panel" id="vf" style="margin-bottom:1.5rem"><h2>➕ Publicar video</h2><div style="display:grid;gap:.8rem">
+  <form class="panel" id="vf" style="margin-bottom:1.5rem"><h2>Publicar video</h2><div style="display:grid;gap:.8rem">
     <input name="title" placeholder="Título *" required maxlength="100">
     <input name="url" placeholder="Enlace YouTube / Vimeo / .mp4 *" required>
     <textarea name="desc" rows="3" placeholder="Descripción *" required></textarea>
     <div class="row"><input name="cat" placeholder="Categoría / etiqueta *" required maxlength="25"><input name="thumb" placeholder="URL de miniatura (auto en YouTube)"></div>
     <button class="btn primary">Publicar</button></div></form>
-  <div class="panel"><h2>🎬 Videos publicados</h2><div style="overflow:auto"><table><tr><th>Título</th><th>Cat.</th><th>Vistas</th><th>⭐</th><th></th></tr>
+  <div class="panel"><h2>Videos publicados</h2><div style="overflow:auto"><table><tr><th>Título</th><th>Cat.</th><th>Vistas</th><th>Calif.</th><th></th></tr>
     ${db.videos.map(v => `<tr><td><a href="#/video/${v.id}">${esc(v.title)}</a></td><td>${esc(v.cat)}</td><td>${v.views}</td><td>${rate(v.id).avg.toFixed(1)}</td><td><button class="btn sm danger" data-rm="${v.id}">Eliminar</button></td></tr>`).join('')}</table></div></div>`;
   $('#vf').addEventListener('submit', e => {
     e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
