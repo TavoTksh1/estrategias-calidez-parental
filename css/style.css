@@ -10,7 +10,7 @@ h1,h2,h3,.brand-title{font-family:'Merriweather',Georgia,serif}
 a{color:inherit;text-decoration:none}
 .topbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.8rem clamp(1rem,4vw,3rem);background:var(--roble);color:#fff;border-bottom:4px solid var(--acacia)}
 .brand{display:flex;align-items:center;gap:.9rem;min-width:0}
-.brand img{height:42px;width:auto;display:block;background:#fff;padding:4px 8px;border-radius:6px}
+.brand img{height:46px;width:auto;display:block;background:#fff;padding:4px 10px;border-radius:6px}
 .brand-title{font-size:1.05rem;font-weight:700;line-height:1.2}
 nav{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;font-size:.95rem}
 nav .muted{color:#d8dcc4}
