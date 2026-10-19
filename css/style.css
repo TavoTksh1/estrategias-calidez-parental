@@ -83,3 +83,10 @@ th{color:var(--roble)}
 .card:nth-child(4n+2){border-top-color:var(--eucalipto)}.card:nth-child(4n+3){border-top-color:var(--naranja)}.card:nth-child(4n+4){border-top-color:var(--amarillo)}
 .stat:nth-child(2){border-left-color:var(--acacia)}.stat:nth-child(3){border-left-color:var(--eucalipto)}.stat:nth-child(4){border-left-color:var(--amarillo)}
 .panel{border-top:3px solid var(--eucalipto)}
+.dropzone{border:2px dashed var(--eucalipto);border-radius:10px;background:#f0f8f5;padding:1.6rem 1rem;text-align:center;cursor:pointer;transition:.15s;color:var(--roble)}
+.dropzone:hover,.dropzone:focus-visible,.dropzone.over{background:#dff1ec;border-color:var(--naranja);outline:none}
+.dropzone.has{border-style:solid;border-color:var(--acacia);background:#f3f9e6}
+.dropzone small{color:var(--muted)}
+.or{display:flex;align-items:center;gap:.8rem;color:var(--muted);font-size:.85rem}
+.or::before,.or::after{content:'';flex:1;border-top:1px solid var(--line)}
+input:disabled{background:#eef0e4;cursor:not-allowed}

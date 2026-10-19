@@ -27,8 +27,48 @@ const starsStr = n => '★'.repeat(Math.round(n)) + '☆'.repeat(5 - Math.round(
 const ago = t => { const m = (Date.now() - t) / 6e4; if (m < 1) return 'ahora'; if (m < 60) return `hace ${m | 0} min`; if (m < 1440) return `hace ${m / 60 | 0} h`; return `hace ${m / 1440 | 0} d`; };
 let tt; function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2400); }
 
+/* Videos subidos como archivo: el Blob vive en IndexedDB y el registro guarda url 'idb:<id>' */
+const isLocal = url => url.startsWith('idb:');
+const idb = () => new Promise((ok, fail) => {
+  const r = indexedDB.open('calidez-files', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('videos');
+  r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error);
+});
+const idbRun = (mode, fn) => idb().then(d => new Promise((ok, fail) => {
+  const tx = d.transaction('videos', mode), req = fn(tx.objectStore('videos'));
+  tx.oncomplete = () => ok(req.result); tx.onerror = tx.onabort = () => fail(tx.error);
+}));
+const putBlob = (id, blob) => idbRun('readwrite', s => s.put(blob, id));
+const getBlob = id => idbRun('readonly', s => s.get(id));
+const delBlob = id => idbRun('readwrite', s => s.delete(id)).catch(() => {});
+const thumbFromFile = file => new Promise(res => {
+  const url = URL.createObjectURL(file), v = document.createElement('video');
+  v.muted = true; v.preload = 'metadata'; v.src = url;
+  const done = d => { URL.revokeObjectURL(url); res(d); };
+  v.onerror = () => done('');
+  v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 4); };
+  v.onseeked = () => {
+    const c = document.createElement('canvas'); c.width = 640; c.height = 360;
+    const x = c.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 640, 360);
+    const k = Math.min(640 / v.videoWidth, 360 / v.videoHeight), w = v.videoWidth * k, h = v.videoHeight * k;
+    x.drawImage(v, (640 - w) / 2, (360 - h) / 2, w, h);
+    try { done(c.toDataURL('image/jpeg', 0.7)); } catch { done(''); }
+  };
+});
+let objUrl;
+async function loadLocalVideo(v) {
+  const el = document.querySelector('video[data-idb]'); if (!el) return;
+  try {
+    const blob = await getBlob(v.url.slice(4));
+    if (!blob) throw 0;
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    el.src = objUrl = URL.createObjectURL(blob);
+  } catch { el.parentElement.innerHTML = '<p class="center muted" style="padding:3rem">El archivo de este video no está disponible en este navegador.</p>'; }
+}
+
 function embed(url) {
   let m;
+  if (isLocal(url)) return `<video controls data-idb="1"></video>`;
   if ((m = url.match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/))) return `<iframe src="https://www.youtube.com/embed/${m[1]}" allowfullscreen allow="accelerometer; encrypted-media; picture-in-picture" title="Video"></iframe>`;
   if ((m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/))) return `<iframe src="https://player.vimeo.com/video/${m[1]}" allowfullscreen title="Video"></iframe>`;
   if (/^https?:\/\/.+\.(mp4|webm|ogg)(\?.*)?$/i.test(url)) return `<video src="${esc(url)}" controls></video>`;
@@ -104,6 +144,7 @@ function watch(id, count = true) {
     ${u ? `<textarea id="ct" rows="3" maxlength="600" placeholder="Escribe un comentario…"></textarea><div style="margin:.7rem 0 1rem" class="row"><button class="btn primary" id="cs" style="flex:none">Publicar</button><select id="cso" style="flex:none;width:auto"><option value="recent">Más recientes</option><option value="pop">Más populares</option></select></div>`
       : '<p class="muted"><a href="#/login" style="color:var(--p)">Inicia sesión</a> o <a href="#/register" style="color:var(--p)">regístrate</a> para comentar.</p>'}
     ${top.map(c => cm(c)).join('') || '<p class="muted">Aún no hay comentarios. Comparte tu reflexión.</p>'}</div>`;
+  loadLocalVideo(v);
   const re = () => watch(id, false);
   document.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => {
     const s = +b.dataset.s; if (mine) mine.score = s; else db.ratings.push({ vid: id, uid: u.id, score: s });
@@ -151,21 +192,48 @@ function admin() {
   <div class="stats"><div class="stat"><b>${db.videos.length}</b>Videos</div><div class="stat"><b>${tv}</b>Reproducciones</div><div class="stat"><b>${db.comments.length}</b>Comentarios</div><div class="stat"><b>${db.users.length}</b>Usuarios</div></div>
   <form class="panel" id="vf" style="margin-bottom:1.5rem"><h2>Publicar video</h2><div style="display:grid;gap:.8rem">
     <input name="title" placeholder="Título *" required maxlength="100">
-    <input name="url" placeholder="Enlace YouTube / Vimeo / .mp4 *" required>
+    <div id="dz" class="dropzone" tabindex="0" role="button" aria-label="Subir archivo de video">
+      <input type="file" id="vfile" accept="video/*" hidden>
+      <p><b>Arrastra un video aquí</b> o <u>elige un archivo</u></p>
+      <small id="dzinfo">MP4, WebM u otro formato de video. Se guarda en este navegador.</small></div>
+    <div class="or"><span>o pega un enlace</span></div>
+    <input name="url" placeholder="Enlace YouTube / Vimeo / .mp4">
     <textarea name="desc" rows="3" placeholder="Descripción *" required></textarea>
-    <div class="row"><input name="cat" placeholder="Categoría / etiqueta *" required maxlength="25"><input name="thumb" placeholder="URL de miniatura (auto en YouTube)"></div>
+    <div class="row"><input name="cat" placeholder="Categoría / etiqueta *" required maxlength="25"><input name="thumb" placeholder="URL de miniatura (automática si no la pones)"></div>
     <button class="btn primary">Publicar</button></div></form>
   <div class="panel"><h2>Videos publicados</h2><div style="overflow:auto"><table><tr><th>Título</th><th>Cat.</th><th>Vistas</th><th>Calif.</th><th></th></tr>
     ${db.videos.map(v => `<tr><td><a href="#/video/${v.id}">${esc(v.title)}</a></td><td>${esc(v.cat)}</td><td>${v.views}</td><td>${rate(v.id).avg.toFixed(1)}</td><td><button class="btn sm danger" data-rm="${v.id}">Eliminar</button></td></tr>`).join('')}</table></div></div>`;
-  $('#vf').addEventListener('submit', e => {
-    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
-    if (!embed(f.url.trim())) return toast('Enlace no válido (YouTube, Vimeo o .mp4)');
-    const thumb = f.thumb.trim() || ytThumb(f.url) || 'img/placeholder.svg';
-    db.videos.unshift({ id: uid(), title: f.title.trim(), url: f.url.trim(), desc: f.desc.trim(), cat: f.cat.trim(), thumb, date: Date.now(), views: 0 });
+  let file = null;
+  const dz = $('#dz'), vfile = $('#vfile'), urlIn = $('#vf [name=url]');
+  const setFile = f => {
+    if (!f) return;
+    if (!f.type.startsWith('video/')) return toast('Elige un archivo de video');
+    file = f; dz.classList.add('has'); urlIn.value = ''; urlIn.disabled = true;
+    $('#dzinfo').textContent = `${f.name} · ${(f.size / 1048576).toFixed(1)} MB (clic para cambiar)`;
+  };
+  dz.addEventListener('click', () => vfile.click());
+  dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); vfile.click(); } });
+  vfile.addEventListener('change', () => setFile(vfile.files[0]));
+  ['dragenter', 'dragover'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('over'); }));
+  dz.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+  $('#vf').addEventListener('submit', async e => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), link = (f.url || '').trim(), btn = e.target.querySelector('button');
+    if (!file && !link) return toast('Arrastra un archivo, elígelo o pega un enlace');
+    if (!file && !embed(link)) return toast('Enlace no válido (YouTube, Vimeo o .mp4)');
+    const id = uid(); let url = link, thumb = f.thumb.trim();
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    if (file) {
+      try { await putBlob(id, file); } catch { btn.disabled = false; btn.textContent = 'Publicar'; return toast('No hay espacio suficiente en el navegador'); }
+      url = 'idb:' + id; thumb = thumb || await thumbFromFile(file);
+    }
+    thumb = thumb || ytThumb(url) || 'img/placeholder.svg';
+    db.videos.unshift({ id, title: f.title.trim(), url, desc: f.desc.trim(), cat: f.cat.trim(), thumb, date: Date.now(), views: 0 });
     save(); admin(); toast('Video publicado');
   });
   document.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => {
     if (!confirm('¿Eliminar este video y sus datos?')) return; const id = b.dataset.rm;
+    const gone = db.videos.find(v => v.id === id); if (gone && isLocal(gone.url)) delBlob(id);
     db.videos = db.videos.filter(v => v.id !== id); db.comments = db.comments.filter(c => c.vid !== id); db.ratings = db.ratings.filter(r => r.vid !== id); save(); admin();
   }));
 }
